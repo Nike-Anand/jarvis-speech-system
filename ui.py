@@ -1,0 +1,564 @@
+import tkinter as tk
+from tkinter import ttk, scrolledtext
+import threading
+import ollama
+import tempfile
+import os
+from datetime import datetime
+import stat
+import random
+import math
+
+try:
+    import win32com.client
+    TTS_AVAILABLE = True
+except ImportError:
+    TTS_AVAILABLE = False
+
+try:
+    import speech_recognition as sr
+    STT_AVAILABLE = True
+except ImportError:
+    STT_AVAILABLE = False
+
+class VoiceAssistantUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("🤖 AI Assistant")
+        self.root.geometry("800x700")
+        self.root.configure(bg="#0a0a0a")
+        self.root.resizable(True, True)
+        
+        # Config - Better accuracy settings
+        self.WAKE_WORD = "alex"
+        self.is_listening = False
+        self.conversation_history = []
+        self.processing_lock = threading.Lock()
+        
+        self.canvas = None
+        self.particles = []
+        self.splash_mode = True
+        self.title_glow = 0
+        
+        # Initialize speech recognition and TTS
+        if STT_AVAILABLE:
+            self.recognizer = sr.Recognizer()
+            self.microphone = sr.Microphone()
+            # Adjust for ambient noise
+            with self.microphone as source:
+                self.recognizer.adjust_for_ambient_noise(source, duration=1)
+        
+
+        
+        # Initialize components
+        self.setup_ui()
+        self.load_models()
+        
+    def setup_ui(self):
+        # Canvas for particle background
+        self.canvas = tk.Canvas(self.root, bg="#0a0a0a", highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+        
+        # Initialize particles
+        self.init_particles()
+        
+        # Create splash screen elements
+        self.create_splash_screen()
+        
+        # Start animations
+        self.animate_particles()
+        self.animate_title()
+        
+        # Initialize hidden chat components
+        self.chat_components = None
+    
+    def init_particles(self):
+        """Initialize particle system"""
+        self.particles = []
+        for _ in range(150):
+            particle = {
+                'x': random.uniform(50, 750),
+                'y': random.uniform(50, 650),
+                'vx': random.uniform(-1, 1),
+                'vy': random.uniform(-1, 1),
+                'color': self.interpolate_color('#00ffff', '#aa00ff', random.random()),
+                'size': random.uniform(2, 6)
+            }
+            self.particles.append(particle)
+    
+    def interpolate_color(self, color1, color2, t):
+        """Interpolate between two hex colors"""
+        r1, g1, b1 = int(color1[1:3], 16), int(color1[3:5], 16), int(color1[5:7], 16)
+        r2, g2, b2 = int(color2[1:3], 16), int(color2[3:5], 16), int(color2[5:7], 16)
+        r = int(r1 + (r2 - r1) * t)
+        g = int(g1 + (g2 - g1) * t)
+        b = int(b1 + (b2 - b1) * t)
+        return f'#{r:02x}{g:02x}{b:02x}'
+    
+    def create_splash_screen(self):
+        """Create splash screen with title and Try Now button"""
+        # Title
+        self.title_text = self.canvas.create_text(
+            400, 200, text="AI Assistant", 
+            font=("Arial", 48, "bold"), 
+            fill="#ffffff", anchor="center"
+        )
+        
+        # Try Now button
+        self.try_button = tk.Button(
+            self.canvas, text="Try Now", 
+            command=self.show_chat_interface,
+            bg="#00ffff", fg="#000000",
+            font=("Arial", 16, "bold"),
+            relief=tk.RAISED, bd=3,
+            width=12, height=2,
+            cursor="hand2"
+        )
+        self.canvas.create_window(400, 450, window=self.try_button)
+    
+    def animate_particles(self):
+        """Animate particle movement"""
+        if not self.splash_mode:
+            return
+            
+        self.canvas.delete("particle")
+        
+        center_x, center_y = 400, 350
+        
+        for particle in self.particles:
+            # Apply attraction to center
+            dx = center_x - particle['x']
+            dy = center_y - particle['y']
+            dist = math.sqrt(dx*dx + dy*dy)
+            
+            if dist > 0:
+                force = 0.02
+                particle['vx'] += (dx / dist) * force
+                particle['vy'] += (dy / dist) * force
+            
+            # Add randomness
+            particle['vx'] += random.uniform(-0.1, 0.1)
+            particle['vy'] += random.uniform(-0.1, 0.1)
+            
+            # Apply velocity damping
+            particle['vx'] *= 0.98
+            particle['vy'] *= 0.98
+            
+            # Update position
+            particle['x'] += particle['vx']
+            particle['y'] += particle['vy']
+            
+            # Boundary check
+            if particle['x'] < 0 or particle['x'] > 800:
+                particle['vx'] *= -0.5
+            if particle['y'] < 0 or particle['y'] > 700:
+                particle['vy'] *= -0.5
+            
+            # Draw particle
+            self.canvas.create_oval(
+                particle['x'] - particle['size'], particle['y'] - particle['size'],
+                particle['x'] + particle['size'], particle['y'] + particle['size'],
+                fill=particle['color'], outline="", tags="particle"
+            )
+        
+        self.root.after(50, self.animate_particles)
+    
+    def show_chat_interface(self):
+        """Transition from splash to chat interface"""
+        self.splash_mode = False
+        self.canvas.destroy()
+        
+        # Create main chat interface
+        main_frame = tk.Frame(self.root, bg="#0a0a0a")
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Header frame
+        header_frame = tk.Frame(main_frame, bg="#1a1a2e", relief=tk.RAISED, bd=2)
+        header_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        # Title
+        self.title_label = tk.Label(header_frame, text="🤖 AI Assistant", 
+                                   font=("Consolas", 28, "bold"), 
+                                   fg="#00ffff", bg="#1a1a2e")
+        self.title_label.pack(pady=15)
+        
+        subtitle = tk.Label(header_frame, text="Advanced Learning & Executive eXpert", 
+                           font=("Arial", 12, "italic"), 
+                           fg="#888888", bg="#1a1a2e")
+        subtitle.pack(pady=(0, 10))
+        
+        # Status frame
+        status_frame = tk.Frame(main_frame, bg="#16213e", relief=tk.GROOVE, bd=2)
+        status_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        status_container = tk.Frame(status_frame, bg="#16213e")
+        status_container.pack(pady=10)
+        
+        self.status_indicator = tk.Label(status_container, text="●", 
+                                        font=("Arial", 16), fg="#ffaa00", bg="#16213e")
+        self.status_indicator.pack(side=tk.LEFT, padx=(10, 5))
+        
+        self.status_label = tk.Label(status_container, text="Ready! Type or speak to chat.", 
+                                    font=("Consolas", 11, "bold"), 
+                                    fg="#ffffff", bg="#16213e")
+        self.status_label.pack(side=tk.LEFT)
+        
+        # Chat display
+        chat_frame = tk.Frame(main_frame, bg="#0f3460", relief=tk.SUNKEN, bd=3)
+        chat_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        
+        chat_label = tk.Label(chat_frame, text="💬 Conversation", 
+                             font=("Arial", 12, "bold"), 
+                             fg="#00ffff", bg="#0f3460")
+        chat_label.pack(anchor=tk.W, padx=10, pady=(10, 5))
+        
+        self.chat_display = scrolledtext.ScrolledText(
+            chat_frame, width=80, height=22, 
+            bg="#001122", fg="#ffffff", 
+            font=("Consolas", 10),
+            insertbackground="#00ffff",
+            selectbackground="#004466",
+            relief=tk.FLAT, bd=0
+        )
+        self.chat_display.pack(pady=(0, 10), padx=10, fill=tk.BOTH, expand=True)
+        
+        # Text input frame
+        input_frame = tk.Frame(main_frame, bg="#0a0a0a")
+        input_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        self.text_input = tk.Entry(
+            input_frame, bg="#001122", fg="#ffffff",
+            font=("Consolas", 11), insertbackground="#00ffff",
+            relief=tk.FLAT, bd=2
+        )
+        self.text_input.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        self.text_input.bind("<Return>", self.send_text_message)
+        
+        send_button = tk.Button(
+            input_frame, text="📤 Send",
+            command=self.send_text_message,
+            bg="#0066cc", fg="#ffffff",
+            font=("Arial", 10, "bold"),
+            relief=tk.RAISED, bd=2,
+            width=8, cursor="hand2"
+        )
+        send_button.pack(side=tk.RIGHT)
+        
+        # Button frame
+        button_frame = tk.Frame(main_frame, bg="#0a0a0a")
+        button_frame.pack(fill=tk.X)
+        
+        self.listen_button = tk.Button(
+            button_frame, text="🎙️ Start Listening", 
+            command=self.toggle_listening,
+            bg="#00aa44", fg="#ffffff", 
+            font=("Arial", 12, "bold"),
+            relief=tk.RAISED, bd=3,
+            width=18, height=2,
+            cursor="hand2"
+        )
+        self.listen_button.pack(side=tk.LEFT, padx=(0, 10))
+        
+        clear_button = tk.Button(
+            button_frame, text="🗑️ Clear Chat", 
+            command=self.clear_chat,
+            bg="#cc3333", fg="#ffffff", 
+            font=("Arial", 12, "bold"),
+            relief=tk.RAISED, bd=3,
+            width=12, height=2,
+            cursor="hand2"
+        )
+        clear_button.pack(side=tk.LEFT, padx=5)
+        
+        info_button = tk.Button(
+            button_frame, text="ℹ️ Info", 
+            command=self.show_info,
+            bg="#4466aa", fg="#ffffff", 
+            font=("Arial", 12, "bold"),
+            relief=tk.RAISED, bd=3,
+            width=8, height=2,
+            cursor="hand2"
+        )
+        info_button.pack(side=tk.RIGHT)
+        
+    def send_text_message(self, event=None):
+        message = self.text_input.get().strip()
+        if not message:
+            return
+            
+        self.text_input.delete(0, tk.END)
+        self.add_to_chat("YOU", message)
+        
+        self.update_status("🤖 Processing...")
+        reply = self.chat_with_ollama(message)
+        self.add_to_chat("ALEX", reply)
+        self.speak_text(reply)
+        self.update_status("Ready! Type or speak to chat.")
+        
+    def create_temp_dir(self):
+        try:
+            import pathlib
+            docs_path = pathlib.Path.home() / "Documents" / "ALEX_Temp"
+            docs_path.mkdir(exist_ok=True)
+            test_file = docs_path / "test.tmp"
+            test_file.write_text("test")
+            test_file.unlink()
+            return str(docs_path)
+        except:
+            try:
+                temp_dir = tempfile.mkdtemp(prefix="alex_")
+                os.chmod(temp_dir, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+                return temp_dir
+            except:
+                return os.getcwd()
+        
+    def load_models(self):
+        def load():
+            self.update_status("Initializing speech recognition...")
+            
+            if STT_AVAILABLE and TTS_AVAILABLE:
+                self.add_to_chat("SYSTEM", "AI Assistant ready with Windows Speech Recognition!")
+            elif STT_AVAILABLE:
+                self.add_to_chat("SYSTEM", "AI Assistant ready (speech input only)!")
+            elif TTS_AVAILABLE:
+                self.add_to_chat("SYSTEM", "AI Assistant ready (text input only)!")
+            else:
+                self.add_to_chat("SYSTEM", "AI Assistant ready (text mode only)!")
+            
+            self.update_status("Ready! Type or click 'Start Listening' to begin.")
+            
+        threading.Thread(target=load, daemon=True).start()
+        
+    def update_status(self, message):
+        if hasattr(self, 'status_label') and self.status_label:
+            self.status_label.config(text=message)
+        
+    def add_to_chat(self, sender, message):
+        if not hasattr(self, 'chat_display') or not self.chat_display:
+            return
+            
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        if sender == "YOU":
+            formatted_msg = f"[{timestamp}] 👤 YOU: {message}\n"
+        elif sender == "ALEX":
+            formatted_msg = f"[{timestamp}] 🤖 ALEX: {message}\n"
+        elif sender == "SYSTEM":
+            formatted_msg = f"[{timestamp}] ⚙️ SYSTEM: {message}\n"
+        else:
+            formatted_msg = f"[{timestamp}] ❌ {sender}: {message}\n"
+            
+        self.chat_display.insert(tk.END, formatted_msg)
+        self.chat_display.see(tk.END)
+        self.root.update_idletasks()
+        
+    def toggle_listening(self):
+        if not self.is_listening:
+            self.start_listening()
+        else:
+            self.stop_listening()
+            
+    def start_listening(self):
+        self.is_listening = True
+        if hasattr(self, 'listen_button') and self.listen_button:
+            self.listen_button.config(text="🛑 Stop & Send", bg="#ff4444")
+        if hasattr(self, 'status_indicator') and self.status_indicator:
+            self.status_indicator.config(fg="#00ff00")
+        self.update_status("🎙️ Listening...")
+        threading.Thread(target=self.listen_loop, daemon=True).start()
+        
+    def stop_listening(self):
+        self.is_listening = False
+        if hasattr(self, 'listen_button') and self.listen_button:
+            self.listen_button.config(text="🎙️ Start Listening", bg="#00aa44")
+        if hasattr(self, 'status_indicator') and self.status_indicator:
+            self.status_indicator.config(fg="#ffaa00")
+        self.update_status("Ready! Type or speak to chat.")
+        
+    def process_audio_buffer(self):
+        # This method is no longer needed with the new speech recognition approach
+        self.update_status("Ready! Type or speak to chat.")
+    
+
+        
+    def listen_loop(self):
+        if not STT_AVAILABLE:
+            self.add_to_chat("ERROR", "Speech recognition not available. Install: pip install SpeechRecognition pyaudio")
+            self.stop_listening()
+            return
+            
+        while self.is_listening:
+            try:
+                self.update_status("🎙️ Listening... (speak now)")
+                
+                # Listen for audio with timeout
+                with self.microphone as source:
+                    # Listen for audio with 1 second timeout
+                    audio = self.recognizer.listen(source, timeout=1, phrase_time_limit=5)
+                
+                self.update_status("🤖 Processing speech...")
+                
+                # Use Google Speech Recognition (more reliable)
+                try:
+                    text = self.recognizer.recognize_google(audio)
+                    if text and len(text.strip()) > 0:
+                        self.add_to_chat("YOU", text)
+                        
+                        # Check for exit commands
+                        if any(word in text.lower() for word in ["exit", "quit", "stop", "shutdown"]):
+                            self.add_to_chat("ALEX", "Goodbye!")
+                            self.speak_text("Goodbye!")
+                            self.stop_listening()
+                            break
+                        
+                        # Process the command
+                        reply = self.chat_with_ollama(text)
+                        self.add_to_chat("ALEX", reply)
+                        self.speak_text(reply)
+                        
+                except sr.UnknownValueError:
+                    self.add_to_chat("SYSTEM", "Could not understand audio. Try speaking more clearly.")
+                        
+                except sr.RequestError as e:
+                    self.add_to_chat("ERROR", f"Speech service error: {e}")
+                except Exception as e:
+                    self.add_to_chat("ERROR", f"Recognition error: {str(e)[:30]}...")
+                    continue
+                    
+            except sr.WaitTimeoutError:
+                # Timeout is normal, continue listening
+                continue
+            except Exception as e:
+                self.add_to_chat("ERROR", f"Listening error: {str(e)[:50]}...")
+                break
+                    
+    def chat_with_ollama(self, prompt):
+        try:
+            self.conversation_history.append({"role": "user", "content": prompt})
+            
+            if len(self.conversation_history) > 6:
+                self.conversation_history = self.conversation_history[-6:]
+            
+            system_msg = "You are ALEX, a helpful AI assistant. Give SHORT responses - maximum 2 sentences. Be friendly and remember our conversation."
+            
+            messages = [{"role": "system", "content": system_msg}] + self.conversation_history
+            
+            response = ollama.chat(model="llama3", messages=messages)
+            reply = response["message"]["content"]
+            
+            self.conversation_history.append({"role": "assistant", "content": reply})
+            
+            return reply
+        except Exception as e:
+            return f"Error: {str(e)[:30]}"
+            
+    def speak_text(self, text):
+        def speak():
+            try:
+                clean_text = self.clean_text_for_speech(text)
+                if clean_text.strip():
+                    # Simple Windows TTS command
+                    os.system(f'powershell -Command "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak(\"{clean_text}\")"')
+            except:
+                pass
+        threading.Thread(target=speak, daemon=True).start()
+    
+    def clean_text_for_speech(self, text):
+        import re
+        
+        text = re.sub(r'[*_`#]', '', text)
+        
+        if len(text) > 150:
+            text = text[:147] + "..."
+            
+        return text.strip()
+        
+    def clear_chat(self):
+        if hasattr(self, 'chat_display') and self.chat_display:
+            self.chat_display.delete(1.0, tk.END)
+        self.conversation_history = []
+        self.add_to_chat("SYSTEM", "Chat cleared. Ready for new conversation!")
+        
+    def animate_title(self):
+        """Animate title glow effect"""
+        if self.splash_mode and hasattr(self, 'title_text'):
+            self.title_glow += 0.1
+            intensity = (math.sin(self.title_glow) + 1) / 2
+            glow_color = self.interpolate_color('#ffffff', '#00ffff', intensity)
+            self.canvas.itemconfig(self.title_text, fill=glow_color)
+            self.root.after(100, self.animate_title)
+        elif hasattr(self, 'title_label') and self.title_label:
+            colors = ["#00ffff", "#00aaff", "#0088ff", "#00aaff"]
+            def cycle_color(index=0):
+                try:
+                    self.title_label.config(fg=colors[index % len(colors)])
+                    self.root.after(1000, lambda: cycle_color(index + 1))
+                except:
+                    pass
+            cycle_color()
+        
+    def show_info(self):
+        info_window = tk.Toplevel(self.root)
+        info_window.title("About AI Assistant")
+        info_window.geometry("450x350")
+        info_window.configure(bg="#1a1a2e")
+        info_window.resizable(False, False)
+        
+        speech_status = "Enabled" if TTS_AVAILABLE else "Disabled"
+        info_text = f"""🤖 AI Assistant - Advanced Learning & Executive eXpert
+
+✨ Features:
+• Voice recognition with enhanced accuracy
+• Natural language processing with Ollama
+• Text-to-speech: {speech_status}
+• Real-time conversation interface
+• Dynamic particle animation
+
+🎯 Commands:
+• Click "Try Now" to start chatting
+• Use "exit", "quit", or "stop" to end
+• Click buttons for manual control
+
+🔧 Technology:
+• Whisper AI for speech recognition
+• Llama3 for intelligent responses
+• Windows SAPI for speech synthesis
+
+📁 Temp Directory: {self.temp_dir}
+        """
+        
+        info_label = tk.Label(info_window, text=info_text, 
+                             font=("Arial", 9), fg="#ffffff", 
+                             bg="#1a1a2e", justify=tk.LEFT)
+        info_label.pack(pady=15, padx=15)
+        
+        close_btn = tk.Button(info_window, text="Close", 
+                             command=info_window.destroy,
+                             bg="#4466aa", fg="#ffffff", 
+                             font=("Arial", 10, "bold"))
+        close_btn.pack(pady=10)
+
+if __name__ == "__main__":
+    if not TTS_AVAILABLE:
+        print("Installing pyttsx3 for speech synthesis...")
+        import subprocess
+        import sys
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "pyttsx3"])
+            print("pyttsx3 installed successfully!")
+        except:
+            print("Could not install pyttsx3. Speech will be disabled.")
+    
+    root = tk.Tk()
+    app = VoiceAssistantUI(root)
+    
+    def on_closing():
+        try:
+            app.splash_mode = False
+            if hasattr(app, 'is_listening'):
+                app.stop_listening()
+        except:
+            pass
+        root.destroy()
+    
+    root.protocol("WM_DELETE_WINDOW", on_closing)
+    root.mainloop()

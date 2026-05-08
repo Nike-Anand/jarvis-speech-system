@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>தமிழ் குரல் உரை மாற்றி</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .record-area, .upload-area {
+            border: 2px dashed #ccc;
+            padding: 30px;
+            text-align: center;
+            margin: 20px 0;
+            border-radius: 10px;
+            background: #fafafa;
+        }
+        .record-area:hover, .upload-area:hover {
+            border-color: #007bff;
+            background: #f0f8ff;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .recording {
+            background: #dc3545;
+        }
+        .recording:hover {
+            background: #c82333;
+        }
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            background: #e8f5e8;
+            border-radius: 5px;
+            display: none;
+        }
+        .error {
+            background: #ffe6e6;
+            color: #d00;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>தமிழ் குரல் உரை மாற்றி<br><small>Tamil Voice to Text Converter</small></h1>
+        
+        <div class="record-area">
+            <p>🎤 தமிழில் பேசுங்கள் (Speak in Tamil)</p>
+            <button id="recordBtn" onclick="toggleRecording()">பதிவு ஆரம்பிக்க (Start Recording)</button>
+            <p id="recordStatus"></p>
+        </div>
+        
+        <div class="upload-area">
+            <p>📁 WAV/MP3 கோப்பை தேர்ந்தெடுக்கவும் (Select WAV/MP3 file)</p>
+            <input type="file" id="audioFile" accept=".wav,.mp3" />
+            <br><br>
+            <button onclick="uploadFile()">உரையாக மாற்று (Convert to Text)</button>
+        </div>
+        
+        <div class="loading" id="loading">
+            <p>⏳ செயலாக்கம்... (Processing...)</p>
+        </div>
+        
+        <div class="result" id="result">
+            <h3>முடிவு (Result):</h3>
+            <div id="output"></div>
+        </div>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioContext;
+        let audioChunks = [];
+        let isRecording = false;
+        
+        // WAV file creation function
+        function createWAVFile(audioBuffer) {
+            const length = audioBuffer.length;
+            const arrayBuffer = new ArrayBuffer(44 + length * 2);
+            const view = new DataView(arrayBuffer);
+            
+            // WAV header
+            const writeString = (offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            };
+            
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + length * 2, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, 16000, true);
+            view.setUint32(28, 32000, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeString(36, 'data');
+            view.setUint32(40, length * 2, true);
+            
+            // Convert float samples to 16-bit PCM
+            let offset = 44;
+            for (let i = 0; i < length; i++) {
+                const sample = Math.max(-1, Math.min(1, audioBuffer[i]));
+                view.setInt16(offset, sample * 0x7FFF, true);
+                offset += 2;
+            }
+            
+            return new Blob([arrayBuffer], { type: 'audio/wav' });
+        }
+        
+        async function toggleRecording() {
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: {
+                            sampleRate: 16000,
+                            channelCount: 1
+                        }
+                    });
+                    
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                    const source = audioContext.createMediaStreamSource(stream);
+                    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+                    
+                    audioChunks = [];
+                    
+                    processor.onaudioprocess = (e) => {
+                        const inputData = e.inputBuffer.getChannelData(0);
+                        audioChunks.push(new Float32Array(inputData));
+                    };
+                    
+                    source.connect(processor);
+                    processor.connect(audioContext.destination);
+                    
+                    isRecording = true;
+                    
+                    document.getElementById('recordBtn').textContent = 'பதிவு நிறுத்து (Stop Recording)';
+                    document.getElementById('recordBtn').className = 'recording';
+                    document.getElementById('recordStatus').textContent = 'பதிவு செய்யப்படுகிறது... (Recording...)';
+                    
+                    // Store references for stopping
+                    window.currentStream = stream;
+                    window.currentProcessor = processor;
+                    
+                } catch (error) {
+                    alert('மைக்ரோபோன் அணுக முடியவில்லை (Microphone access denied)');
+                }
+            } else {
+                // Stop recording
+                if (window.currentProcessor) {
+                    window.currentProcessor.disconnect();
+                }
+                if (window.currentStream) {
+                    window.currentStream.getTracks().forEach(track => track.stop());
+                }
+                if (audioContext) {
+                    audioContext.close();
+                }
+                
+                // Combine audio chunks
+                let totalLength = 0;
+                audioChunks.forEach(chunk => totalLength += chunk.length);
+                
+                const combinedAudio = new Float32Array(totalLength);
+                let offset = 0;
+                audioChunks.forEach(chunk => {
+                    combinedAudio.set(chunk, offset);
+                    offset += chunk.length;
+                });
+                
+                // Create WAV file
+                const wavBlob = createWAVFile(combinedAudio);
+                uploadRecording(wavBlob);
+                
+                isRecording = false;
+                
+                document.getElementById('recordBtn').textContent = 'பதிவு ஆரம்பிக்க (Start Recording)';
+                document.getElementById('recordBtn').className = '';
+                document.getElementById('recordStatus').textContent = '';
+            }
+        }
+        
+        function uploadRecording(audioBlob) {
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'recording.wav');
+            
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result').style.display = 'none';
+            
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                showResult(data);
+            })
+            .catch(error => {
+                showError(error.message);
+            });
+        }
+        
+        function uploadFile() {
+            const fileInput = document.getElementById('audioFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('கோப்பை தேர்ந்தெடுக்கவும் (Please select a file)');
+                return;
+            }
+            
+            const validFormats = ['.wav', '.mp3'];
+            const fileExt = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+            if (!validFormats.includes(fileExt)) {
+                alert('WAV அல்லது MP3 கோப்பை மட்டும் பதிவேற்றவும் (Please upload WAV or MP3 file only)');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result').style.display = 'none';
+            
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                showResult(data);
+            })
+            .catch(error => {
+                showError(error.message);
+            });
+        }
+        
+        function showResult(data) {
+            document.getElementById('loading').style.display = 'none';
+            
+            if (data.error) {
+                showError(data.error);
+            } else {
+                document.getElementById('result').className = 'result';
+                document.getElementById('output').innerHTML = `
+                    <p><strong>மூல உரை (Original):</strong><br>${data.original}</p>
+                    <p><strong>மேம்படுத்தப்பட்ட உரை (Enhanced):</strong><br>${data.enhanced}</p>
+                `;
+                document.getElementById('result').style.display = 'block';
+            }
+        }
+        
+        function showError(message) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('result').className = 'result error';
+            document.getElementById('output').innerHTML = `<p>பிழை: ${message}</p>`;
+            document.getElementById('result').style.display = 'block';
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Tamil Voice Recorder</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+        button { padding: 15px 30px; font-size: 18px; margin: 10px; cursor: pointer; }
+        .recording { background: red; color: white; }
+        #result { margin-top: 20px; padding: 20px; background: #f0f0f0; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>தமிழ் குரல் பதிவு (Tamil Voice Recorder)</h1>
+    
+    <button id="recordBtn" onclick="toggleRecording()">பதிவு ஆரம்பிக்க (Start Recording)</button>
+    <button onclick="testWithFile()">கோப்பு பதிவேற்று (Upload File)</button>
+    
+    <input type="file" id="fileInput" accept=".wav" style="display:none;" onchange="uploadFile()">
+    
+    <div id="status"></div>
+    <div id="result"></div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+
+        async function toggleRecording() {
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+
+                    mediaRecorder.ondataavailable = event => {
+                        audioChunks.push(event.data);
+                    };
+
+                    mediaRecorder.onstop = () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                        console.log('Audio blob size:', audioBlob.size);
+                        uploadAudio(audioBlob);
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+
+                    document.getElementById('recordBtn').textContent = 'பதிவு நிறுத்து (Stop Recording)';
+                    document.getElementById('recordBtn').className = 'recording';
+                    document.getElementById('status').textContent = 'Recording... Speak in Tamil';
+
+                } catch (error) {
+                    alert('Microphone access denied: ' + error.message);
+                }
+            } else {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                isRecording = false;
+
+                document.getElementById('recordBtn').textContent = 'பதிவு ஆரம்பிக்க (Start Recording)';
+                document.getElementById('recordBtn').className = '';
+                document.getElementById('status').textContent = 'Processing...';
+            }
+        }
+
+        function testWithFile() {
+            document.getElementById('fileInput').click();
+        }
+
+        function uploadFile() {
+            const file = document.getElementById('fileInput').files[0];
+            if (file) {
+                uploadAudio(file);
+            }
+        }
+
+        function uploadAudio(audioBlob) {
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'recording.wav');
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('status').textContent = '';
+                if (data.error) {
+                    document.getElementById('result').innerHTML = `<h3>Error:</h3><p>${data.error}</p>`;
+                } else {
+                    document.getElementById('result').innerHTML = `
+                        <h3>Result:</h3>
+                        <p><strong>Original:</strong> ${data.original}</p>
+                        <p><strong>Enhanced:</strong> ${data.enhanced}</p>
+                    `;
+                }
+            })
+            .catch(error => {
+                document.getElementById('status').textContent = '';
+                document.getElementById('result').innerHTML = `<h3>Error:</h3><p>${error.message}</p>`;
+            });
+        }
+    </script>
+</body>
+</html>
