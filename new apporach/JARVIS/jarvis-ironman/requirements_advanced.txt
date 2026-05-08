@@ -1,0 +1,31 @@
+# JARVIS Advanced Features - Core Dependencies
+# Compatible with Python 3.13 on Windows
+# Install in order for best results
+
+## OCR (Text Extraction)
+pytesseract==0.3.10
+Pillow>=10.2.0
+
+## PowerPoint Generation
+python-pptx==0.6.23
+
+## Web Scraping (simplified - no lxml)
+beautifulsoup4==4.12.3
+requests==2.31.0
+
+## Machine Learning
+scikit-learn>=1.4.0
+pandas>=2.2.0
+numpy>=1.26.0
+
+## Object Detection
+ultralytics>=8.1.0
+opencv-python>=4.9.0
+
+## Task Automation
+pyautogui==0.9.54
+schedule==1.2.1
+
+## Note: EasyOCR skipped (large download, optional)
+# To install EasyOCR separately: pip install easyocr
+# Tesseract OCR will be used as primary OCR engine

@@ -1,0 +1,7 @@
+fastapi==0.115.0
+uvicorn==0.32.0
+websockets==13.1
+ollama==0.4.2
+pyjokes==0.6.0
+psutil==6.1.0
+duckduckgo-search==7.0.3

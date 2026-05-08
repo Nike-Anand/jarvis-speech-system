@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+
+<body>
+    <!-- 3D AI Orb Container -->
+    <div class="orb-container">
+        <canvas id="aiOrb" class="ai-orb-canvas"></canvas>
+        <div class="orb-glow"></div>
+    </div>
+
+    <!-- Status Overlay -->
+    <div class="status-overlay">
+        <div class="status-badge" id="statusBadge">
+            <span class="status-dot"></span>
+            <span class="status-text">ONLINE</span>
+        </div>
+    </div>
+
+    <!-- Chat Messages (Minimal) -->
+    <div class="chat-overlay" id="chatOverlay">
+        <div class="chat-messages" id="chatMessages"></div>
+    </div>
+
+    <!-- Bottom Input Bar -->
+    <div class="input-bar">
+        <input type="file" id="fileInput" accept="image/*" style="display: none;">
+        <button class="voice-btn-mini" id="uploadBtn" title="Upload Image">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+        </button>
+        <button class="voice-btn-mini" id="voiceBtn" title="Voice Input">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+        </button>
+        <input type="text" class="chat-input-mini" id="chatInput" placeholder="Ask JARVIS anything..."
+            autocomplete="off">
+        <button class="send-btn-mini" id="sendBtn" title="Send">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Notification Container -->
+    <div class="notification-container" id="notificationContainer"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+
+</html>
